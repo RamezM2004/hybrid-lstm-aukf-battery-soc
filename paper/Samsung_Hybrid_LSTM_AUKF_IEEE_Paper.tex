@@ -1,0 +1,226 @@
+\documentclass[lettersize,journal]{IEEEtran}
+
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{balance}
+
+\hyphenation{op-tical net-works semi-conduc-tor state-of-charge lith-ium-ion}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Hybrid LSTM-Aided Adaptive Unscented Kalman Filtering for Lithium-Ion Battery State-of-Charge Estimation}
+
+\author{Ramez Al-Masadeh%
+\thanks{R. Al-Masadeh is with the Department of Mechatronics Engineering, German Jordanian University, Amman, Jordan. E-mail: insert-email-here.}%
+\thanks{Manuscript prepared as part of a lithium-ion battery state-estimation research project using the CALCE Samsung INR18650-20R dataset.}}
+
+\markboth{Battery State-of-Charge Estimation Project,~2026}%
+{Al-Masadeh: Hybrid LSTM-Aided Adaptive UKF for Lithium-Ion Battery SoC Estimation}
+
+\maketitle
+
+\begin{abstract}
+Accurate state-of-charge (SoC) estimation is a key requirement for lithium-ion battery management systems because SoC cannot be directly measured and is affected by current profile, temperature, polarization, and model uncertainty. This paper presents a hybrid SoC estimator that combines a data-driven long short-term memory (LSTM) network with an adaptive unscented Kalman filter (AUKF). The LSTM is trained to estimate SoC from voltage, current, voltage derivative, and temperature sequences. Its output is then treated as an additional SoC measurement inside an AUKF based on a first-order Thevenin equivalent circuit model. The final estimator fuses terminal-voltage measurements, the LSTM SoC estimate, and battery physics to produce a physically consistent SoC estimate. Experiments are conducted on CALCE Samsung INR18650-20R dynamic profiles at 0$^\circ$C, 25$^\circ$C, and 45$^\circ$C, with 50\% and 80\% initial SoC. The final held-out US06 test split shows that the proposed hybrid method reduces SoC RMSE from 1.239\% for the standalone LSTM to 1.114\%, while also reducing maximum error from 6.563\% to 5.344\%.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Adaptive unscented Kalman filter, battery management system, lithium-ion battery, long short-term memory, state of charge, Thevenin equivalent circuit model.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\IEEEPARstart{L}{ithium-ion} batteries are widely used in electric vehicles, portable electronics, and energy-storage systems because of their high energy density and long cycle life. In a battery management system (BMS), state-of-charge (SoC) estimation is one of the most important monitoring tasks because it indicates the remaining usable capacity of the cell. However, SoC is an internal state and cannot be measured directly. It must be estimated from measurable quantities such as voltage, current, temperature, and internal resistance \cite{wang2023battery}.
+
+Physics-based estimators such as the extended Kalman filter (EKF) and unscented Kalman filter (UKF) are widely used because they combine a battery equivalent circuit model with real-time measurements. However, their accuracy strongly depends on the quality of the open-circuit-voltage (OCV) relation, equivalent circuit parameters, initial SoC, and noise tuning. In contrast, neural-network estimators can learn nonlinear relationships directly from data, but their predictions may lack physical consistency and diagnostic information.
+
+This work proposes a hybrid LSTM-AUKF estimator. The LSTM first estimates SoC from recent voltage-current-temperature behavior. The AUKF then uses the LSTM output as a second measurement together with terminal voltage. Therefore, the LSTM anchors the SoC state, while the AUKF enforces voltage consistency through the Thevenin model.
+
+The main contributions of this work are:
+\begin{itemize}
+    \item construction of a leakage-safe LSTM SoC dataset from Samsung dynamic profiles at three temperatures and two initial SoC levels;
+    \item implementation of a standalone LSTM SoC estimator using voltage, current, voltage derivative, and temperature;
+    \item development of a hybrid AUKF measurement model using both measured terminal voltage and LSTM-estimated SoC;
+    \item held-out evaluation on the unseen US06 profile, showing improved SoC accuracy compared with the standalone LSTM.
+\end{itemize}
+
+\section{Dataset and Preprocessing}
+\subsection{Samsung Dynamic Profiles}
+The experimental data are based on Samsung INR18650-20R cell tests from the CALCE battery dataset. The SP2 dynamic profiles include dynamic stress test (DST), Beijing dynamic stress test (BJDST), Federal Urban Driving Schedule (FUDS), and US06 profiles at 0$^\circ$C, 25$^\circ$C, and 45$^\circ$C. Each profile is available at 50\% and 80\% initial SoC.
+
+To avoid data leakage, the files are split by profile before windowing. DST and BJDST are used for training, FUDS is used for validation, and US06 is used only for final testing. This split evaluates whether the model generalizes to an unseen driving profile.
+
+\begin{table}[!t]
+\caption{File-Level Split Used for Leakage-Safe Evaluation}
+\label{tab:split}
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Split} & \textbf{Profiles} & \textbf{Temperatures} & \textbf{Initial SoC} \\
+\hline
+Train & DST, BJDST & 0, 25, 45$^\circ$C & 50\%, 80\% \\
+\hline
+Validation & FUDS & 0, 25, 45$^\circ$C & 50\%, 80\% \\
+\hline
+Test & US06 & 0, 25, 45$^\circ$C & 50\%, 80\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Reference SoC Generation}
+The reference SoC is computed by Coulomb counting using the initial SoC of each file and the extracted SP2 nominal capacity of 2.028345 Ah. With discharge current defined as positive, the reference SoC is calculated as
+\begin{equation}
+    \mathrm{SoC}_{k} = \mathrm{SoC}_{k-1} - \frac{I_{k-1}\Delta t_k}{Q_{\mathrm{cap}}},
+    \label{eq:soc_cc}
+\end{equation}
+where $I_{k-1}$ is the current during the interval, $\Delta t_k$ is the sampling time difference, and $Q_{\mathrm{cap}}$ is the cell capacity in coulombs.
+
+\subsection{Input Features}
+For the LSTM, each sequence contains 50 time steps and four input features:
+\begin{equation}
+    \mathbf{u}_k = [V_k,\ I_k,\ \dot{V}_k,\ T_k]^T,
+\end{equation}
+where $V_k$ is terminal voltage, $I_k$ is model current, $\dot{V}_k$ is the voltage derivative, and $T_k$ is temperature. The target output is the reference SoC at the end of the sequence. The input scaler is fitted only on the training split and then reused for validation and test data.
+
+\section{Thevenin Battery Model}
+The AUKF uses a first-order Thevenin equivalent circuit model. The state vector is
+\begin{equation}
+    \mathbf{x}_k = [\mathrm{SoC}_k,\ V_{p,k},\ b_k]^T,
+\end{equation}
+where $V_p$ is the polarization voltage and $b$ is a small voltage bias term. The terminal-voltage model is
+\begin{equation}
+    V_k = \mathrm{OCV}(\mathrm{SoC}_k) - I_k R_0 - V_{p,k} + b_k,
+    \label{eq:voltage_model}
+\end{equation}
+where $R_0$ is the ohmic resistance. The polarization voltage is propagated using
+\begin{equation}
+    V_{p,k} = e^{-\Delta t/(R_pC_p)}V_{p,k-1} + R_p\left(1-e^{-\Delta t/(R_pC_p)}\right)I_{k-1}.
+    \label{eq:vp_model}
+\end{equation}
+The OCV relation is obtained from incremental OCV tests and represented by a lookup table or polynomial fit.
+
+\section{Standalone LSTM SoC Estimator}
+The standalone LSTM learns a nonlinear mapping from recent voltage-current-temperature behavior to SoC:
+\begin{equation}
+    \widehat{\mathrm{SoC}}^{\mathrm{LSTM}}_k = f_{\theta}\left(\mathbf{u}_{k-49},\ldots,\mathbf{u}_k\right).
+\end{equation}
+The implemented architecture uses two LSTM layers with 64 hidden units and dropout of 0.2, followed by a fully connected regression head with a sigmoid output to constrain the SoC prediction between 0 and 1. The LSTM output is used both as a standalone estimator and as an auxiliary measurement in the hybrid AUKF.
+
+\section{Hybrid LSTM-AUKF Fusion}
+\subsection{Hybrid Measurement Model}
+In the proposed hybrid estimator, the AUKF measurement vector contains two values:
+\begin{equation}
+    \mathbf{z}_k =
+    \begin{bmatrix}
+    V^{\mathrm{meas}}_k \\
+    \widehat{\mathrm{SoC}}^{\mathrm{LSTM}}_k
+    \end{bmatrix}.
+\end{equation}
+The corresponding measurement function is
+\begin{equation}
+    \mathbf{h}(\mathbf{x}_k) =
+    \begin{bmatrix}
+    \mathrm{OCV}(\mathrm{SoC}_k) - I_kR_0 - V_{p,k} + b_k \\
+    \mathrm{SoC}_k
+    \end{bmatrix}.
+    \label{eq:hybrid_hx}
+\end{equation}
+Thus, the first measurement enforces voltage consistency, while the second measurement pulls the SoC state toward the LSTM estimate.
+
+\subsection{Adaptive Process Noise}
+The process-noise covariance is adjusted using the normalized innovation squared (NIS). For the two-dimensional measurement vector, the NIS is
+\begin{equation}
+    \epsilon_k = \mathbf{y}_k^T \mathbf{S}_k^{-1}\mathbf{y}_k,
+\end{equation}
+where $\mathbf{y}_k$ is the innovation and $\mathbf{S}_k$ is the innovation covariance. The target NIS is approximately equal to the measurement dimension, which is two in this case. If the NIS becomes large, the process noise is increased so that the filter can adapt more quickly to model mismatch.
+
+\subsection{Causal Timing}
+The prediction step uses the previous interval current $I_{k-1}$, while the update step uses the current sample $I_k$. The LSTM window is causal and current-inclusive, using samples $k-49$ through $k$. Warm-up samples before the first available LSTM sequence are excluded from final metrics.
+
+\section{Results and Discussion}
+\subsection{Final Held-Out Test Results}
+The final evaluation is performed only on the US06 test files. Table~\ref{tab:test_results} compares the standalone LSTM with the proposed hybrid LSTM-AUKF estimator.
+
+\begin{table}[!t]
+\caption{Final Held-Out US06 Test Results}
+\label{tab:test_results}
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+\textbf{Method} & \textbf{RMSE} & \textbf{MAE} & \textbf{Max Error} & \textbf{$R^2$} \\
+\hline
+Standalone LSTM & 1.239\% & 0.937\% & 6.563\% & 0.9966 \\
+\hline
+Hybrid LSTM-AUKF & 1.114\% & 0.812\% & 5.344\% & 0.9973 \\
+\hline
+\end{tabular}
+\end{table}
+
+The hybrid estimator improves the SoC RMSE from 1.239\% to 1.114\%. It also reduces the mean absolute error and worst-case error. This indicates that the AUKF does not degrade the learned LSTM estimate; instead, it provides a physically consistent correction using the terminal-voltage model.
+
+The voltage RMSE on the final test split is 0.0237 V, and the mean NIS is 1.671. Since the hybrid measurement vector has dimension two, an NIS value close to two indicates reasonable statistical consistency. In addition, 96.01\% of the NIS values are below the 95\% chi-square bound of 5.99, which suggests that the chosen measurement and process noise values are acceptable for the tested data.
+
+\subsection{Temperature-Wise Performance}
+Table~\ref{tab:temperature_results} summarizes the final test performance by temperature.
+
+\begin{table}[!t]
+\caption{Test Performance by Temperature on US06 Profiles}
+\label{tab:temperature_results}
+\centering
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+\textbf{Temp.} & \textbf{LSTM RMSE} & \textbf{Hybrid RMSE} & \textbf{Hybrid MAE} & \textbf{Hybrid $R^2$} \\
+\hline
+0$^\circ$C & 1.897\% & 1.765\% & 1.473\% & 0.9921 \\
+\hline
+25$^\circ$C & 0.799\% & 0.606\% & 0.499\% & 0.9992 \\
+\hline
+45$^\circ$C & 0.800\% & 0.698\% & 0.550\% & 0.9990 \\
+\hline
+\end{tabular}
+\end{table}
+
+The most difficult operating condition is 0$^\circ$C, where voltage sag and nonlinear internal resistance effects are stronger. Even under this condition, the hybrid estimator improves the standalone LSTM RMSE. The strongest improvement occurs at 25$^\circ$C, where the hybrid RMSE decreases to 0.606\%.
+
+\subsection{Discussion}
+The standalone AUKF was able to track voltage but showed weak SoC estimation at 80\% initial SoC because voltage alone can be insufficient to uniquely correct SoC when the OCV curve is flat or model parameters are imperfect. The hybrid architecture addresses this issue by adding the LSTM SoC as a direct measurement. Therefore, the filter no longer relies only on voltage residuals to correct SoC drift.
+
+Compared with a raw LSTM, the hybrid model provides four main advantages: physical consistency with terminal voltage, smoother state evolution, voltage residual diagnostics, and NIS-based consistency monitoring. These properties are useful for BMS-oriented research because they make the estimator more interpretable than a purely data-driven model.
+
+\section{Conclusion}
+This paper presented a hybrid LSTM-AUKF estimator for lithium-ion battery SoC estimation. The LSTM was trained to estimate SoC from voltage, current, voltage derivative, and temperature sequences. Its prediction was then fused with measured terminal voltage inside an adaptive UKF based on a Thevenin equivalent circuit model. On the held-out US06 test split, the hybrid estimator achieved 1.114\% SoC RMSE compared with 1.239\% for the standalone LSTM. The hybrid method also reduced MAE and maximum error while maintaining reasonable NIS consistency. Future work should include temperature-dependent ECM parameter identification, cross-cell validation using SP1 and SP3 data, and comparison with additional neural architectures such as GRU and transformer-based sequence models.
+
+\appendices
+\section{Project Pipeline Summary}
+The complete project pipeline is summarized as follows: load Samsung SP2 dynamic files; detect the true dynamic test start; compute reference SoC using Coulomb counting; build leakage-safe LSTM sequences; train and evaluate a standalone LSTM; build a standalone AUKF; fuse LSTM SoC and voltage measurements inside the AUKF; and report final results only on the held-out US06 test split.
+
+\balance
+
+\begin{thebibliography}{1}
+
+\bibitem{wang2023battery}
+S. Wang, K. Liu, Y. Wang, D.-I. Stroe, C. Fernandez, and J. M. Guerrero, \emph{Multidimensional Lithium-Ion Battery Status Monitoring}. Boca Raton, FL, USA: CRC Press, 2023.
+
+\bibitem{calce}
+Center for Advanced Life Cycle Engineering, University of Maryland, ``CALCE battery data,'' accessed 2026. [Online]. Available: \url{https://calce.umd.edu/battery-data}
+
+\bibitem{hochreiter1997lstm}
+S. Hochreiter and J. Schmidhuber, ``Long short-term memory,'' \emph{Neural Computation}, vol. 9, no. 8, pp. 1735--1780, 1997.
+
+\bibitem{julier1997ukf}
+S. J. Julier and J. K. Uhlmann, ``A new extension of the Kalman filter to nonlinear systems,'' in \emph{Proc. SPIE AeroSense: Signal Processing, Sensor Fusion, and Target Recognition}, 1997.
+
+\bibitem{wan2000ukf}
+E. A. Wan and R. van der Merwe, ``The unscented Kalman filter for nonlinear estimation,'' in \emph{Proc. IEEE Adaptive Systems for Signal Processing, Communications, and Control Symposium}, 2000, pp. 153--158.
+
+\end{thebibliography}
+
+\end{document}
