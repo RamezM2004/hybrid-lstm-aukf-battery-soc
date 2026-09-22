@@ -6,7 +6,11 @@ from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
 
 # --- Configuration ---
 BATTERY_ID = 'B0005'
-FILENAME = r"C:\Users\USER\OneDrive - GJU\Desktop\4th Year\Machine Intelligence I\MI Project\5.+Battery+Data+Set\5. Battery Data Set\1. BatteryAgingARC-FY08Q4\B0005.mat"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+FILENAME = os.path.join(DEFAULT_DATA_DIR, f"{BATTERY_ID}.mat")
+if not os.path.exists(FILENAME):
+    FILENAME = r"C:\Users\USER\OneDrive - GJU\Desktop\4th Year\4.1\Machine Intelligence I\MI Project\5.+Battery+Data+Set\5. Battery Data Set\1. BatteryAgingARC-FY08Q4\B0005.mat"
 
 # Battery Parameters (Thevenin ECM)
 R0 = 0.15     # Ohmic Resistance

@@ -23,7 +23,10 @@ plt.rcParams.update({"font.size": 9})
 # CONFIG
 # ============================================================
 
-DATA_DIR = r"C:\Users\USER\OneDrive - GJU\Desktop\4th Year\4.1\Machine Intelligence I\MI Project\5.+Battery+Data+Set\5. Battery Data Set\1. BatteryAgingARC-FY08Q4"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+if not os.path.exists(DATA_DIR):
+    DATA_DIR = r"C:\Users\USER\OneDrive - GJU\Desktop\4th Year\4.1\Machine Intelligence I\MI Project\5.+Battery+Data+Set\5. Battery Data Set\1. BatteryAgingARC-FY08Q4"
 
 BATTERY_FILES = {
     "B0005": os.path.join(DATA_DIR, "B0005.mat"),

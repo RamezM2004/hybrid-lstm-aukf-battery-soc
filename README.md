@@ -54,3 +54,25 @@ The hybrid estimator reduces maximum error by **18.6%** and achieves **96.01% st
 │   └── AI_Models_Description.pdf              # Machine intelligence architecture breakdown
 └── README.md
 ```
+---
+
+## Quickstart & Reproduction
+
+This repository is completely self-contained. The NASA battery aging datasets (`B0005.mat`, `B0006.mat`, `B0007.mat`, `B0018.mat`) are included directly in the `data/` directory.
+
+### 1. Clone & Install Dependencies
+```bash
+git clone https://github.com/RamezM2004/hybrid-lstm-aukf-battery-soc.git
+cd hybrid-lstm-aukf-battery-soc
+pip install -r requirements.txt
+```
+
+### 2. Run Adaptive UKF State Estimation
+```bash
+python src/AdpNasaDataSet.py
+```
+
+### 3. Run Hybrid LSTM-AUKF Pipeline
+```bash
+python src/BatterySoC_LSTM.py
+```
