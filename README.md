@@ -1,39 +1,41 @@
-# Hybrid Physics–AI State-of-Charge (SoC) Estimation for Lithium-Ion Batteries
-### Integrating Adaptive Unscented Kalman Filtering (AUKF) with Deep LSTM Sequence Networks
+# Hybrid Physics-AI State-of-Charge (SoC) Estimation for Lithium-Ion Batteries
+### Two-Dataset LSTM and Adaptive Unscented Kalman Filtering Study
 
 **Author:** Ramez Al-Masadeh  
 **Advisor:** Dr.-Ing. Sahar Qaadan  
 **Institution:** German Jordanian University (GJU) — School of Applied Technical Sciences  
-**Paper Manuscript:** `paper/Samsung_Hybrid_LSTM_AUKF_IEEE_Paper.tex` (IEEE Transactions format)
+**Paper Manuscript:** `paper/Samsung_Hybrid_LSTM_AUKF_IEEE_Paper.tex`
 
 ---
 
 ## Project Overview
 
-Precise State-of-Charge (SoC) estimation is paramount for battery management systems (BMS) in electric vehicles and energy storage systems. Conventional Equivalent Circuit Models (ECMs) struggle in non-linear regions (such as the end-of-discharge "voltage knee"), while purely data-driven black-box neural networks lack physical guarantees and fail under unseen thermal dynamics.
+Precise State-of-Charge (SoC) estimation is important for battery management systems (BMS) in electric vehicles and energy storage systems. This repository documents two related but different research tracks. The first track uses NASA battery aging data to test whether an LSTM can help an Adaptive Unscented Kalman Filter respond to the end-of-discharge voltage knee. The second track uses CALCE Samsung INR18650-20R dynamic drive-cycle data to fuse an LSTM SoC estimate with a physics-based AUKF.
 
-This project delivers a **hybrid physics-informed framework** that fuses:
-1. **Long Short-Term Memory (LSTM) Neural Network:** Predicts nominal SoC and detects the non-linear voltage collapse from causal measurements (voltage, current, voltage derivative, temperature).
-2. **Adaptive Unscented Kalman Filter (AUKF):** Enforces a 1st-order Thevenin ECM, continuously correcting predictions through innovation monitoring and dynamic process noise ($Q$) adaptation.
+The project is intentionally reported as two datasets and two estimator roles:
+
+1. **Project I - NASA PCoE aging dataset:** B0005, B0006, B0007, and B0018 discharge cycles are used with a battery-level split. The LSTM is a pseudo-knee-region classifier, not a direct SoC regressor. It acts as a trigger for process-noise adaptation in an AUKF. This track is useful as a leakage-controlled prototype and diagnostic study; it does not represent the strongest final estimator.
+2. **Project II - CALCE Samsung INR18650-20R dataset:** Dynamic profiles are split by drive-cycle family. DST and BJDST are used for training, FUDS for validation, and US06 is held out for final testing at 0 C, 25 C, and 45 C. Here, the LSTM directly predicts SoC and the AUKF fuses that value with terminal-voltage measurements using a first-order Thevenin ECM.
 
 ---
 
 ## Key Scientific Innovations
 
-- **The Voltage Knee Detection Mechanism:** An LSTM sequence classifier tracks temporal voltage derivatives to anticipate the sudden exponential voltage drop. Upon detection, the filter dynamically scales $Q$, making the state estimator aggressively responsive when model assumptions degrade.
-- **Innovation Consistency & Huber Weighting:** Incorporates online innovation covariance matching and Normalized Innovation Squared (NIS) monitoring to bound sensor divergence under high noise.
-- **Leakage-Safe Benchmarking (CALCE Samsung INR18650-20R):** Built a strict profile-separated evaluation pipeline (DST and BJDST for training, FUDS for validation, and US06 reserved for testing) across **0°C, 25°C, and 45°C**.
+- **Leakage-controlled NASA evaluation:** Uses a battery-level split and avoids same-cycle test capacity in UKF propagation. The NASA result is reported honestly as a prototype/negative-result audit because model mismatch and pseudo-OCV limitations affected consistency.
+- **Profile-separated Samsung evaluation:** Uses a drive-cycle split to test generalization on a completely held-out US06 profile family.
+- **Physics + AI fusion:** The Samsung estimator uses LSTM SoC as a learned measurement while voltage is constrained by a Thevenin ECM inside the AUKF.
+- **Innovation monitoring:** Reports Normalized Innovation Squared (NIS) to check whether the filter is statistically consistent, rather than reporting only SoC error.
 
 ---
 
 ## Validation Results (US06 Driving Cycle)
 
-| Estimator Architecture | SoC RMSE (%) | Max Error (%) | Mean NIS | 95% Chi-Square Bound Conformity |
-| :--- | :---: | :---: | :---: | :---: |
-| Standalone LSTM | 1.239% | 6.563% | — | — |
-| **Hybrid LSTM–AUKF (Ours)** | **1.114%** | **5.344%** | **1.671** | **96.01%** |
+| Estimator Architecture | SoC RMSE (%) | SoC MAE (%) | Max Error (%) | Mean NIS | 95% Chi-Square Bound Conformity |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Standalone LSTM | 1.239% | 0.937% | 6.563% | - | - |
+| **Hybrid LSTM-AUKF** | **1.114%** | **0.812%** | **5.344%** | **1.671** | **96.01%** |
 
-The hybrid estimator reduces maximum error by **18.6%** and achieves **96.01% statistical filter consistency**, maintaining robustness across broad thermal variations.
+The Samsung hybrid estimator reduces maximum error by **18.6%** and keeps the 2-D NIS close to its expected range. The NASA track remains in the repository because it explains the method development, the leakage controls, and the limitations that led to the stronger Samsung fusion design.
 
 ---
 
@@ -58,7 +60,7 @@ The hybrid estimator reduces maximum error by **18.6%** and achieves **96.01% st
 
 ## Quickstart & Reproduction
 
-This repository is completely self-contained. The NASA battery aging datasets (`B0005.mat`, `B0006.mat`, `B0007.mat`, `B0018.mat`) are included directly in the `data/` directory.
+The NASA battery aging datasets (`B0005.mat`, `B0006.mat`, `B0007.mat`, `B0018.mat`) are included directly in the `data/` directory. The Samsung pipeline is documented in the paper and result summaries; large raw Samsung files may need to be obtained separately depending on distribution limits.
 
 ### 1. Clone & Install Dependencies
 ```bash
